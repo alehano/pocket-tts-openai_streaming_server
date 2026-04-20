@@ -266,6 +266,7 @@ pocket-tts-openai_streaming_server/
 │   ├── __init__.py        # Flask app factory
 │   ├── config.py          # Configuration management
 │   ├── language_normalize.py  # BCP-47 / aliases → Pocket-TTS language ids
+│   ├── pocket_load_compat.py  # load_model(language=) vs config= for older pocket-tts
 │   ├── logging_config.py  # Logging setup
 │   ├── routes.py          # API endpoints
 │   └── services/          # Business logic
@@ -295,6 +296,9 @@ pocket-tts-openai_streaming_server/
 ```bash
 # Install runtime dependencies only
 pip install -r requirements.txt
+
+# Optional: use a nearby checkout of kyutai-labs/pocket-tts instead of PyPI
+# pip install -e ../pocket-tts
 
 # Or install with dev tools (recommended for contributors)
 pip install -r requirements-dev.txt
@@ -328,6 +332,10 @@ pyinstaller --onefile --name PocketTTS-Server \
 ### High memory use with multiple languages
 
 Each Pocket-TTS language is a separate model in RAM. Prefer `POCKET_TTS_PRELOAD_LANGUAGES` only for locales you need at startup, or let rarely used languages load on first request and size the container/VM accordingly.
+
+### `TTSModel.load_model() got an unexpected keyword argument 'language'`
+
+Your installed `pocket-tts` is older than the API that accepts `language=`. This server falls back to loading `pocket_tts/config/<language>.yaml` via `config=` automatically. Upgrade when convenient: `pip install -U "pocket-tts>=1.1.1"`, or install from a [local clone](https://github.com/kyutai-labs/pocket-tts) with `pip install -e /path/to/pocket-tts`.
 
 ### Model Loading Takes Long
 

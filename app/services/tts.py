@@ -15,6 +15,7 @@ import torch
 from app.config import Config
 from app.language_normalize import normalize_language, parse_preload_list
 from app.logging_config import get_logger
+from app.pocket_load_compat import load_model_for_language
 
 logger = get_logger('tts')
 
@@ -145,7 +146,7 @@ class TTSService:
 
             logger.info(f'Loading Pocket TTS weights for language={canonical_lang!r}...')
             t0 = time.time()
-            model = TTSModel.load_model(language=canonical_lang)
+            model = load_model_for_language(TTSModel, canonical_lang)
             self.models[canonical_lang] = model
             load_time = time.time() - t0
             logger.info(
