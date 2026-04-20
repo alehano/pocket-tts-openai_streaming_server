@@ -336,6 +336,10 @@ Each Pocket-TTS language is a separate model in RAM. Prefer `POCKET_TTS_PRELOAD_
 
 Your installed `pocket-tts` is older than the API that accepts `language=`. This server falls back to loading `pocket_tts/config/<language>.yaml` via `config=` automatically (see `load_model_for_language` in `app/services/tts.py`). Upgrade when convenient: `pip install -U "pocket-tts>=1.1.1"`, or install from a [local clone](https://github.com/kyutai-labs/pocket-tts) with `pip install -e /path/to/pocket-tts`.
 
+### `no config english.yaml` but `b6369a24` (or one yaml) is available
+
+Some wheels bundle a **single** hash-named YAML (English only). The server maps **`english`** to that file automatically. Other languages require a full Pocket-TTS install with per-locale configs (`french_24l.yaml`, etc.).
+
 ### Model Loading Takes Long
 
 First run downloads the model (~500MB). Subsequent runs use cached model.

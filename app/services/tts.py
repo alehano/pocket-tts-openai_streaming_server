@@ -35,6 +35,9 @@ def load_model_for_language(tts_model_cls, canonical_lang: str):
     """
     Load TTSModel for a language id across pocket-tts versions: `language=` when
     available, else `config=<pocket_tts/config/<lang>.yaml>`.
+
+    Some PyPI wheels ship only a single hash-named yaml (e.g. ``b6369a24.yaml``) for
+    English; we use that when ``canonical_lang == "english"``.
     """
     sig = inspect.signature(tts_model_cls.load_model)
     if "language" in sig.parameters:
@@ -42,19 +45,31 @@ def load_model_for_language(tts_model_cls, canonical_lang: str):
 
     cfg_dir = _pocket_configs_dir()
     cfg_path = cfg_dir / f"{canonical_lang}.yaml"
-    if not cfg_path.is_file():
-        available = sorted(p.stem for p in cfg_dir.glob("*.yaml"))
-        raise FileNotFoundError(
-            f"pocket-tts: no config {cfg_path.name} under {cfg_dir}. "
-            f"Available: {', '.join(available)}"
+    if cfg_path.is_file():
+        if "config" in sig.parameters:
+            return tts_model_cls.load_model(config=cfg_path)
+        raise RuntimeError("pocket-tts TTSModel.load_model has no `config` parameter")
+
+    # Single bundled config (common on older/minimal wheels) — treat as English only.
+    yamls = sorted(cfg_dir.glob("*.yaml"))
+    if len(yamls) == 1:
+        if canonical_lang != "english":
+            raise FileNotFoundError(
+                f"This pocket-tts install only ships {yamls[0].name} (English). "
+                f"Cannot load language {canonical_lang!r}. "
+                "Install a current kyutai-labs/pocket-tts (see README) for french_24l, german_24l, etc."
+            )
+        logger.info(
+            "Using single bundled config %s as English (minimal pocket-tts wheel)",
+            yamls[0].name,
         )
+        if "config" in sig.parameters:
+            return tts_model_cls.load_model(config=yamls[0])
 
-    if "config" in sig.parameters:
-        return tts_model_cls.load_model(config=cfg_path)
-
-    raise RuntimeError(
-        "pocket-tts TTSModel.load_model has neither `language` nor `config`; "
-        "upgrade pocket-tts: pip install -U pocket-tts"
+    available = sorted(p.stem for p in yamls)
+    raise FileNotFoundError(
+        f"pocket-tts: no config {cfg_path.name} under {cfg_dir}. "
+        f"Available: {', '.join(available) if available else '(none)'}"
     )
 
 # Lazy import pocket_tts to allow for better error handling
