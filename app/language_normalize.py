@@ -6,13 +6,14 @@ See https://github.com/kyutai-labs/pocket-tts — supported locales use per-lang
 from __future__ import annotations
 
 # Canonical pocket-tts language ids (see pocket_tts.models.tts_model.TTSModel.load_model docstring).
+# We default to the newer 24-layer variants where available for consistency and quality.
 CANONICAL_LANGUAGES: frozenset[str] = frozenset(
     {
         'english',
         'french_24l',
         'german_24l',
-        'portuguese',
-        'italian',
+        'italian_24l',
+        'portuguese_24l',
         'spanish_24l',
     }
 )
@@ -22,8 +23,8 @@ _PRIMARY_TO_CANONICAL: dict[str, str] = {
     'en': 'english',
     'fr': 'french_24l',
     'de': 'german_24l',
-    'pt': 'portuguese',
-    'it': 'italian',
+    'it': 'italian_24l',
+    'pt': 'portuguese_24l',
     'es': 'spanish_24l',
 }
 
@@ -32,9 +33,13 @@ _NAME_TO_CANONICAL: dict[str, str] = {
     'english': 'english',
     'french': 'french_24l',
     'german': 'german_24l',
-    'portuguese': 'portuguese',
-    'italian': 'italian',
+    'italian': 'italian_24l',
+    'portuguese': 'portuguese_24l',
     'spanish': 'spanish_24l',
+    # Legacy 12-layer ids — accept them but transparently upgrade to the _24l variant
+    # so clients that hardcode the old name don't have to change.
+    'italian_12l': 'italian_24l',
+    'portuguese_12l': 'portuguese_24l',
 }
 
 
@@ -65,7 +70,7 @@ def normalize_language(raw: str | None, default: str) -> str:
     raise ValueError(
         f"Unsupported language {raw!r}. "
         f"Use one of: {', '.join(sorted(CANONICAL_LANGUAGES))}, "
-        'or BCP-47 tags like en-US, fr-FR, de-DE.'
+        'or BCP-47 tags like en-US, fr-FR, de-DE, it-IT, pt-PT, es-ES.'
     )
 
 

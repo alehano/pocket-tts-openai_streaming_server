@@ -110,6 +110,9 @@ def list_voices():
                     'name': v['name'],
                     'object': 'voice',
                     'type': v.get('type', 'builtin'),
+                    # 'gender' is only present for built-in voices whose source
+                    # recording gender is known; omitted for custom voices.
+                    **({'gender': v['gender']} if v.get('gender') else {}),
                 }
                 for v in voices
             ],

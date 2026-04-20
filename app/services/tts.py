@@ -397,10 +397,18 @@ class TTSService:
         """
         voices = []
 
-        # Built-in voices (sorted alphabetically)
-        builtin_sorted = sorted(Config.BUILTIN_VOICES)
-        for voice in builtin_sorted:
-            voices.append({'id': voice, 'name': voice.capitalize(), 'type': 'builtin'})
+        # Built-in voices (sorted alphabetically). Gender metadata is published
+        # so clients can filter by voice gender.
+        for voice in sorted(Config.BUILTIN_VOICES):
+            meta = Config.BUILTIN_VOICES[voice]
+            voices.append(
+                {
+                    'id': voice,
+                    'name': voice.replace('_', ' ').title(),
+                    'type': 'builtin',
+                    'gender': meta.get('gender'),
+                }
+            )
 
         # Custom voices from directory
         custom_voices = []

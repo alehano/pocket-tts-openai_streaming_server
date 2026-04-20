@@ -75,8 +75,34 @@ class Config:
     LOG_MAX_BYTES = int(os.environ.get('POCKET_TTS_LOG_MAX_BYTES', str(10 * 1024 * 1024)))  # 10MB
     LOG_BACKUP_COUNT = int(os.environ.get('POCKET_TTS_LOG_BACKUP_COUNT', '5'))
 
-    # Built-in voice mappings (these are resolved by pocket-tts internally)
-    BUILTIN_VOICES = ['alba', 'marius', 'javert', 'jean', 'fantine', 'cosette', 'eponine', 'azelma']
+    # Built-in voice mappings (these are resolved by pocket-tts internally).
+    # Gender is derived from the source recording (see pocket_tts/utils/utils.py
+    # _ORIGINS_OF_PREDEFINED_VOICES -> VCTK speaker-info, EARS, Expresso, etc.).
+    # All 21 sources are English native speakers; non-English languages use
+    # pocket-tts cross-lingual voice cloning (timbre preserved, accent inherited).
+    BUILTIN_VOICES: dict[str, dict[str, str]] = {
+        'alba': {'gender': 'female'},
+        'anna': {'gender': 'female'},
+        'vera': {'gender': 'female'},
+        'fantine': {'gender': 'female'},
+        'eponine': {'gender': 'female'},
+        'azelma': {'gender': 'female'},
+        'mary': {'gender': 'female'},
+        'jane': {'gender': 'female'},
+        'eve': {'gender': 'female'},
+        'cosette': {'gender': 'female'},
+        'caro_davy': {'gender': 'female'},
+        'charles': {'gender': 'male'},
+        'paul': {'gender': 'male'},
+        'george': {'gender': 'male'},
+        'michael': {'gender': 'male'},
+        'jean': {'gender': 'male'},
+        'marius': {'gender': 'male'},
+        'javert': {'gender': 'male'},
+        'bill_boerst': {'gender': 'male'},
+        'peter_yearsley': {'gender': 'male'},
+        'stuart_bell': {'gender': 'male'},
+    }
 
     # Supported audio extensions for custom voices
     VOICE_EXTENSIONS = ('.wav', '.mp3', '.flac', '.safetensors')

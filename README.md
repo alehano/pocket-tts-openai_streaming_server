@@ -302,10 +302,25 @@ The official OpenAI Python client does not expose a `language` field for TTS. To
 
 ### Built-in Voices
 
-The following voices are available by default:
-`alba`, `marius`, `javert`, `jean`, `fantine`, `cosette`, `eponine`, `azelma`
+`GET /v1/voices` lists all built-in voices with a `gender` field so clients can
+filter by voice gender. The full set of 21 voices (matching the embeddings
+published in `kyutai/pocket-tts-without-voice-cloning/languages/<lang>/embeddings/`):
 
-The `voices/` directory includes 150+ community-contributed voices.
+| Gender | Voices |
+| ------ | ------ |
+| Female | `alba`, `anna`, `azelma`, `caro_davy`, `cosette`, `eponine`, `eve`, `fantine`, `jane`, `mary`, `vera` |
+| Male   | `bill_boerst`, `charles`, `george`, `javert`, `jean`, `marius`, `michael`, `paul`, `peter_yearsley`, `stuart_bell` |
+
+> **Note on non-English accent.** All 21 source recordings are English native
+> speakers (VCTK/EARS/Expresso/voice-donations/alba-mackenna/voice-zero).
+> Pocket-TTS renders language-specific embeddings via cross-lingual voice
+> cloning, so the timbre is preserved but a light English accent is inherited
+> when these voices are used to synthesize Spanish/French/German/etc. There is
+> no native-language subset to filter to — pocket-tts does not ship built-in
+> embeddings for the per-language corpora on Hugging Face (e.g. `cml-tts/fr/`).
+
+The `voices/` directory includes 150+ community-contributed voices, which are
+returned as `"type": "custom"` without a `gender` field.
 
 ## Configuration
 
