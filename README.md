@@ -18,32 +18,61 @@ Tested and working fully with [WingmanAI by Shipbit](https://www.wingman-ai.com/
 
 ## Installing Pocket-TTS with all languages
 
-If you see an error about only `b6369a24.yaml` (English), your environment has a **minimal** `pocket-tts` wheel that does not ship the per-locale YAML files under `pocket_tts/config/`. **PyPI currently publishes `pocket-tts` only up to 1.1.x**; some 1.1 wheels still bundle a single English config. To get **all** language YAMLs (`english.yaml`, `french_24l.yaml`, …), install from the **upstream GitHub repo** (below). A future 2.x PyPI release may ship full configs.
+Multi-language support requires **pocket-tts 2.x**, which is distributed via the [kyutai-labs/pocket-tts](https://github.com/kyutai-labs/pocket-tts) repository. **PyPI currently publishes only `pocket-tts` 1.1.x**, whose wheels ship a single English config (`b6369a24.yaml`). If you install from PyPI you will see errors like *"no config french_24l.yaml"* / *"This pocket-tts install only ships b6369a24.yaml (English)"* as soon as you request any non-English language.
 
-**1. Latest PyPI (may still be English-only)** — same venv as this server:
-
-```bash
-pip install -U "pocket-tts>=1.1.0"
-```
-
-**2. Check that all configs are present:**
+The recommended layout is to clone `pocket-tts` alongside this repo so both `pyproject.toml` and `requirements.txt` pick it up automatically:
 
 ```bash
-python -c "import pathlib, pocket_tts; d=pathlib.Path(pocket_tts.__path__[0])/'config'; print(*sorted(p.stem for p in d.glob('*.yaml')))"
-```
-
-You should see names like `english`, `french_24l`, `german_24l`, `italian`, `portuguese`, `spanish_24l` (exact set matches the upstream repo).
-
-**3. Full multi-language configs (recommended if PyPI wheel is English-only)** — editable install from [kyutai-labs/pocket-tts](https://github.com/kyutai-labs/pocket-tts):
-
-```bash
+# Parent directory (e.g. ~/LLM/pocket-tts/)
 git clone https://github.com/kyutai-labs/pocket-tts.git
-cd pocket-tts
-pip install -e .
-# or: uv pip install -e .
+git clone https://github.com/teddybear082/pocket-tts-openai_streaming_server.git
 ```
 
-Use that venv when you run `python server.py` or `./start.sh`.
+After cloning, verify the per-locale configs exist:
+
+```bash
+ls pocket-tts/pocket_tts/config
+# english.yaml  french_24l.yaml  german_24l.yaml  italian.yaml  italian_24l.yaml
+# portuguese.yaml  portuguese_24l.yaml  spanish.yaml  spanish_24l.yaml
+```
+
+Then install this server. Both paths below resolve `pocket-tts` to the sibling clone above:
+
+**uv (recommended):**
+
+```bash
+cd pocket-tts-openai_streaming_server
+uv sync                       # installs pocket-tts (editable) from ../pocket-tts
+uv run python server.py --stream
+```
+
+`pyproject.toml` contains:
+
+```toml
+[tool.uv.sources]
+pocket-tts = { path = "../pocket-tts", editable = true }
+```
+
+Remove that entry (or change the path) to pull a different version. If you install pocket-tts from an arbitrary location, make sure `python -c "import pocket_tts; ..."` in the server venv shows all per-locale YAMLs.
+
+**pip / venv:**
+
+```bash
+cd pocket-tts-openai_streaming_server
+python -m venv venv && source venv/bin/activate  # Windows: venv\Scripts\activate
+pip install -r requirements.txt   # uses '-e ../pocket-tts' from the sibling clone
+python server.py --stream
+```
+
+If you cloned `pocket-tts` elsewhere, edit the `-e ../pocket-tts` line in `requirements.txt` (or replace it with `pocket-tts @ git+https://github.com/kyutai-labs/pocket-tts@main`).
+
+**Check that all configs are present inside the server venv:**
+
+```bash
+uv run python -c "import pathlib, pocket_tts; d=pathlib.Path(pocket_tts.__path__[0])/'config'; print(*sorted(p.stem for p in d.glob('*.yaml')))"
+```
+
+You should see `english french_24l german_24l italian italian_24l portuguese portuguese_24l spanish spanish_24l` (or a superset).
 
 ### Running with uv
 
@@ -385,7 +414,31 @@ Your installed `pocket-tts` is older than the API that accepts `language=`. This
 
 ### `no config english.yaml` but `b6369a24` (or one yaml) is available
 
-Some wheels bundle a **single** hash-named YAML (English only). The server maps **`english`** to that file automatically. Other languages require a full Pocket-TTS install with per-locale configs (`french_24l.yaml`, etc.).
+Some wheels bundle a **single** hash-named YAML (English only). The server maps **`english`** to that file automatically. Other languages require pocket-tts 2.x installed from [kyutai-labs/pocket-tts](https://github.com/kyutai-labs/pocket-tts) (see "Installing Pocket-TTS with all languages" above).
+
+### `This pocket-tts install only ships b6369a24.yaml (English). Cannot load language 'french_24l'`
+
+Same root cause as above: you are running the English-only PyPI wheel. Clone the upstream repo and install it into the **same** venv as this server:
+
+```bash
+# Next to this repo:
+cd ..
+git clone https://github.com/kyutai-labs/pocket-tts.git
+
+# In this repo:
+cd pocket-tts-openai_streaming_server
+rm -rf .venv uv.lock       # if you previously synced against the PyPI wheel
+uv sync                     # will now install the local pocket-tts (editable)
+uv run python server.py --stream
+```
+
+Confirm with:
+
+```bash
+uv run python -c "import pathlib, pocket_tts; d=pathlib.Path(pocket_tts.__path__[0])/'config'; print(sorted(p.stem for p in d.glob('*.yaml')))"
+```
+
+It must list `french_24l`, `german_24l`, etc. If it still shows only `b6369a24`, the venv is pointing at a stale install — delete `.venv`/`uv.lock` and re-sync.
 
 ### Model Loading Takes Long
 
