@@ -13,8 +13,9 @@ waitress>=3.0.0
 -e ../pocket-tts
 
 # Audio processing (CPU wheels via --extra-index-url above)
-torch>=2.5.0
-torchaudio>=2.5.0
+# torchaudio 2.9 dropped its built-in encoders in favor of torchcodec; pin <2.9 so torchaudio.save() keeps working.
+torch>=2.5.0,<2.9
+torchaudio>=2.5.0,<2.9
 scipy>=1.10.0
 numpy>=2.0.0
 soundfile>=0.12.0

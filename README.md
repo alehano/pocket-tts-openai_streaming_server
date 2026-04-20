@@ -440,6 +440,18 @@ uv run python -c "import pathlib, pocket_tts; d=pathlib.Path(pocket_tts.__path__
 
 It must list `french_24l`, `german_24l`, etc. If it still shows only `b6369a24`, the venv is pointing at a stale install — delete `.venv`/`uv.lock` and re-sync.
 
+### `TorchCodec is required for save_with_torchcodec` / `No module named 'torchcodec'`
+
+Starting with `torchaudio` 2.9, audio encoding (`torchaudio.save`) is delegated to the separate [`torchcodec`](https://pypi.org/project/torchcodec/) package. This project pins `torchaudio<2.9` so the built-in encoders stay available. If you see this error your venv has a newer torchaudio — re-sync:
+
+```bash
+cd pocket-tts-openai_streaming_server
+rm -rf .venv uv.lock
+uv sync
+```
+
+Or, if you prefer torchaudio 2.9+, install torchcodec alongside it: `uv pip install torchcodec` (plus the matching FFmpeg runtime; see the torchcodec README).
+
 ### Model Loading Takes Long
 
 First run downloads the model (~500MB). Subsequent runs use cached model.

@@ -11,8 +11,10 @@ dependencies = [
     # (english/french_24l/german_24l/italian/italian_24l/portuguese/portuguese_24l/spanish/spanish_24l).
     # PyPI still publishes 1.1.x (English-only), so we source it from the local clone by default.
     "pocket-tts>=2.0.0",
-    "torch>=2.5.0",
-    "torchaudio>=2.5.0",
+    # torchaudio 2.9 moved audio encoding to torchcodec and breaks torchaudio.save() unless torchcodec is installed.
+    # Pin to <2.9 so the built-in encoders stay available (keeps mp3/wav/flac/opus/aac output working).
+    "torch>=2.5.0,<2.9",
+    "torchaudio>=2.5.0,<2.9",
     "scipy>=1.10.0",
     "numpy>=2.0.0",
     "soundfile>=0.12.0",
