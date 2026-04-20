@@ -4,12 +4,12 @@
 # Core dependencies
 flask>=3.0.0
 waitress>=3.0.0
-# 2.x wheels include pocket_tts/config/*.yaml for all locales; 1.x minimal wheels may be English-only (b6369a24.yaml).
-pocket-tts>=2.0.0
+# PyPI latest is 1.1.x; some wheels are English-only (b6369a24.yaml). Full per-locale configs: pip install -e ../pocket-tts from kyutai-labs.
+pocket-tts>=1.1.0
 
-# Audio processing (pocket-tts 2.x needs torch>=2.5)
-torch>=2.5.0,<=2.8.0
-torchaudio>=2.5.0,<=2.8.0
+# Audio processing (CPU wheels via --extra-index-url above)
+torch>=2.0.0,<=2.8.0
+torchaudio>=2.0.0,<=2.8.0
 scipy>=1.10.0
-numpy>=2.0.0
+numpy>=1.24.0
 soundfile>=0.12.0
