@@ -18,16 +18,12 @@ Tested and working fully with [WingmanAI by Shipbit](https://www.wingman-ai.com/
 
 ## Installing Pocket-TTS with all languages
 
-If you see an error about only `b6369a24.yaml` (English), your environment has an **old or minimal** `pocket-tts` wheel that does not ship the per-locale YAML files under `pocket_tts/config/`. Install a **current** release so those files exist (then this server can load `french_24l`, `german_24l`, etc.).
+If you see an error about only `b6369a24.yaml` (English), your environment has a **minimal** `pocket-tts` wheel that does not ship the per-locale YAML files under `pocket_tts/config/`. **PyPI currently publishes `pocket-tts` only up to 1.1.x**; some 1.1 wheels still bundle a single English config. To get **all** language YAMLs (`english.yaml`, `french_24l.yaml`, …), install from the **upstream GitHub repo** (below). A future 2.x PyPI release may ship full configs.
 
-**1. Upgrade from PyPI (simplest)** — in the same venv you use for the streaming server:
+**1. Latest PyPI (may still be English-only)** — same venv as this server:
 
 ```bash
-source .venv/bin/activate   # or your venv
-pip install -U "pocket-tts>=2.0.0"
-# pocket-tts 2.x expects torch>=2.5; if pip errors, upgrade torch first:
-pip install -U "torch>=2.5.0" "torchaudio>=2.5.0"
-pip install -U "pocket-tts>=2.0.0"
+pip install -U "pocket-tts>=1.1.0"
 ```
 
 **2. Check that all configs are present:**
@@ -38,15 +34,32 @@ python -c "import pathlib, pocket_tts; d=pathlib.Path(pocket_tts.__path__[0])/'c
 
 You should see names like `english`, `french_24l`, `german_24l`, `italian`, `portuguese`, `spanish_24l` (exact set matches the upstream repo).
 
-**3. Install from a local clone** (same result as a full wheel, good for development):
+**3. Full multi-language configs (recommended if PyPI wheel is English-only)** — editable install from [kyutai-labs/pocket-tts](https://github.com/kyutai-labs/pocket-tts):
 
 ```bash
 git clone https://github.com/kyutai-labs/pocket-tts.git
 cd pocket-tts
 pip install -e .
+# or: uv pip install -e .
 ```
 
 Use that venv when you run `python server.py` or `./start.sh`.
+
+### Running with uv
+
+Use **one** of these (do not nest `uv exec` + `uv run`):
+
+```bash
+cd pocket-tts-openai_streaming_server
+uv sync
+uv run python server.py --stream
+```
+
+If you prefer `requirements.txt` only (no `pyproject.toml` sync):
+
+```bash
+uv run --with-requirements requirements.txt python server.py --stream
+```
 
 First run for each language may still **download weights** from Hugging Face (~hundreds of MB per locale); ensure disk space and network access.
 
