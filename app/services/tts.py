@@ -4,6 +4,7 @@ TTS Service - handles model loading, voice management, and audio generation.
 
 from __future__ import annotations
 
+import inspect
 import os
 import threading
 import time
@@ -15,9 +16,46 @@ import torch
 from app.config import Config
 from app.language_normalize import normalize_language, parse_preload_list
 from app.logging_config import get_logger
-from app.pocket_load_compat import load_model_for_language
 
 logger = get_logger('tts')
+
+
+def _pocket_configs_dir() -> Path:
+    try:
+        from pocket_tts.utils.config import CONFIGS_DIR
+
+        return Path(CONFIGS_DIR)
+    except Exception:
+        import pocket_tts
+
+        return Path(pocket_tts.__path__[0]) / "config"
+
+
+def load_model_for_language(tts_model_cls, canonical_lang: str):
+    """
+    Load TTSModel for a language id across pocket-tts versions: `language=` when
+    available, else `config=<pocket_tts/config/<lang>.yaml>`.
+    """
+    sig = inspect.signature(tts_model_cls.load_model)
+    if "language" in sig.parameters:
+        return tts_model_cls.load_model(language=canonical_lang)
+
+    cfg_dir = _pocket_configs_dir()
+    cfg_path = cfg_dir / f"{canonical_lang}.yaml"
+    if not cfg_path.is_file():
+        available = sorted(p.stem for p in cfg_dir.glob("*.yaml"))
+        raise FileNotFoundError(
+            f"pocket-tts: no config {cfg_path.name} under {cfg_dir}. "
+            f"Available: {', '.join(available)}"
+        )
+
+    if "config" in sig.parameters:
+        return tts_model_cls.load_model(config=cfg_path)
+
+    raise RuntimeError(
+        "pocket-tts TTSModel.load_model has neither `language` nor `config`; "
+        "upgrade pocket-tts: pip install -U pocket-tts"
+    )
 
 # Lazy import pocket_tts to allow for better error handling
 TTSModel = None
