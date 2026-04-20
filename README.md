@@ -14,6 +14,7 @@ Tested and working fully with [WingmanAI by Shipbit](https://www.wingman-ai.com/
 - 💻 **Cross-platform** - Runs on Windows, macOS, and Linux
 - ⚡ **CPU Optimized** - No GPU required
 - 🎤 **Text pre-processing** - Clean text for words and symbols TTS usually has difficulty with, automatically
+- 🌍 **Multi-language** - Per-request `language` (Pocket-TTS locales: English, French, German, Portuguese, Italian, Spanish); each locale loads its own model and stays in memory while running
 
 ## Quick Start
 
@@ -41,6 +42,10 @@ POCKET_TTS_PORT=8080 docker compose up -d
 
 # Use custom voices directory
 POCKET_TTS_VOICES_DIR=/path/to/my/voices docker compose up -d
+
+# Multi-language: default locale + optional extra models loaded at startup
+# POCKET_TTS_DEFAULT_LANGUAGE=english
+# POCKET_TTS_PRELOAD_LANGUAGES=french_24l,german_24l
 ```
 
 ### Option 2: Python (from source)
@@ -93,6 +98,17 @@ Open `http://localhost:49112` in your browser to access the built-in web UI:
 
 ## API Usage
 
+### Multi-language behavior
+
+Pocket-TTS loads **one acoustic model per language**. This server keeps each loaded language in memory for the lifetime of the process (voice embeddings are cached per language + voice).
+
+- **Default (no `POCKET_TTS_MODEL_PATH`):** “multi-language” mode. The server loads `POCKET_TTS_DEFAULT_LANGUAGE` (and any `POCKET_TTS_PRELOAD_LANGUAGES`) at startup. Any other language is loaded on first use.
+- **Single config (`POCKET_TTS_MODEL_PATH` or bundled YAML):** one fixed model. The `language` field on `POST /v1/audio/speech` is **ignored** (same as upstream OpenAI clients that only send `voice` / `input`).
+
+Supported language identifiers match [Pocket-TTS](https://github.com/kyutai-labs/pocket-tts): canonical ids include `english`, `french_24l`, `german_24l`, `portuguese`, `italian`, `spanish_24l`. The API also accepts **BCP-47 tags** (e.g. `fr-FR`, `en-US`) and short ISO codes (`fr`, `de`, …) and maps them to those ids.
+
+**List supported ids:** `GET /v1/languages`
+
 ### Generate Speech
 
 **Endpoint:** `POST /v1/audio/speech`
@@ -106,6 +122,19 @@ curl http://localhost:49112/v1/audio/speech \
     "voice": "alba"
   }' \
   --output speech.mp3
+```
+
+French example (multi-language mode):
+
+```bash
+curl http://localhost:49112/v1/audio/speech \
+  -H "Content-Type: application/json" \
+  -d '{
+    "input": "Bonjour le monde.",
+    "voice": "alba",
+    "language": "fr-FR"
+  }' \
+  --output speech-fr.mp3
 ```
 
 ### Python Client
@@ -138,14 +167,17 @@ with client.audio.speech.with_streaming_response.create(
         pass
 ```
 
+The official OpenAI Python client does not expose a `language` field for TTS. To pass it, use `httpx`/`requests` against `POST /v1/audio/speech` with a JSON body that includes `"language": "de-DE"` (or a canonical id), or a client that allows extra JSON keys.
+
 ### API Reference
 
-| Endpoint           | Method | Description                              |
-| ------------------ | ------ | ---------------------------------------- |
-| `/`                | GET    | Web interface                            |
-| `/health`          | GET    | Health check for container orchestration |
-| `/v1/voices`       | GET    | List available voices                    |
-| `/v1/audio/speech` | POST   | Generate speech audio                    |
+| Endpoint            | Method | Description                                      |
+| ------------------- | ------ | ------------------------------------------------ |
+| `/`                 | GET    | Web interface                                    |
+| `/health`           | GET    | Health check; includes `default_language`, `loaded_languages` in multi-language mode |
+| `/v1/voices`        | GET    | List available voices                            |
+| `/v1/languages`     | GET    | List supported Pocket-TTS language ids             |
+| `/v1/audio/speech`  | POST   | Generate speech audio                            |
 
 **Speech Parameters:**
 
@@ -154,6 +186,7 @@ with client.audio.speech.with_streaming_response.create(
 | `model`           | string  | No       | -       | Ignored (for OpenAI compatibility)                 |
 | `input`           | string  | Yes      | -       | Text to synthesize                                 |
 | `voice`           | string  | No       | `alba`  | Voice ID (see `/v1/voices`)                        |
+| `language`        | string  | No       | -       | Pocket-TTS language id or BCP-47 (multi-language mode only; see above) |
 | `response_format` | string  | No       | `mp3`   | Output format: `mp3`, `wav`, `pcm`, `opus`, `flac` |
 | `stream`          | boolean | No       | `false` | Enable streaming response                          |
 
@@ -207,7 +240,9 @@ The `voices/` directory includes 150+ community-contributed voices.
 | `POCKET_TTS_HOST`                   | `0.0.0.0`  | Server bind address                    |
 | `POCKET_TTS_PORT`                   | `49112`    | Server port                            |
 | `POCKET_TTS_VOICES_DIR`             | `./voices` | Custom voices directory                |
-| `POCKET_TTS_MODEL_PATH`             | -          | Custom model path                      |
+| `POCKET_TTS_MODEL_PATH`             | -          | If set, load this YAML only (single-model mode; `language` on requests ignored) |
+| `POCKET_TTS_DEFAULT_LANGUAGE`       | `english`  | Default Pocket-TTS language id when `MODEL_PATH` is unset |
+| `POCKET_TTS_PRELOAD_LANGUAGES`      | -          | Comma-separated ids to load at startup (e.g. `french_24l,spanish_24l`) |
 | `POCKET_TTS_STREAM_DEFAULT`         | `true`     | Enable streaming by default            |
 | `POCKET_TTS_TEXT_PREPROCESS_DEFAULT`| `true`     | Enable text preprocessing by default   |
 | `POCKET_TTS_LOG_LEVEL`              | `INFO`     | Log level: DEBUG, INFO, WARNING, ERROR |
@@ -230,12 +265,13 @@ pocket-tts-openai_streaming_server/
 ├── app/                    # Application modules
 │   ├── __init__.py        # Flask app factory
 │   ├── config.py          # Configuration management
+│   ├── language_normalize.py  # BCP-47 / aliases → Pocket-TTS language ids
 │   ├── logging_config.py  # Logging setup
 │   ├── routes.py          # API endpoints
 │   └── services/          # Business logic
 │       ├── audio.py       # Audio conversion
-│       └── tts.py         # TTS service
-|       |-- preprocess.py  # Text preprocessor
+│       ├── preprocess.py  # Text preprocessor
+│       └── tts.py         # TTS service (per-language models + voice cache)
 ├── static/                 # Web UI assets
 ├── templates/              # HTML templates
 ├── voices/                 # Voice files
@@ -288,6 +324,10 @@ pyinstaller --onefile --name PocketTTS-Server \
 ```
 
 ## Troubleshooting
+
+### High memory use with multiple languages
+
+Each Pocket-TTS language is a separate model in RAM. Prefer `POCKET_TTS_PRELOAD_LANGUAGES` only for locales you need at startup, or let rarely used languages load on first request and size the container/VM accordingly.
 
 ### Model Loading Takes Long
 

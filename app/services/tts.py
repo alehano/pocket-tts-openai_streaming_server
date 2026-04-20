@@ -2,7 +2,10 @@
 TTS Service - handles model loading, voice management, and audio generation.
 """
 
+from __future__ import annotations
+
 import os
+import threading
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -10,6 +13,7 @@ from pathlib import Path
 import torch
 
 from app.config import Config
+from app.language_normalize import normalize_language, parse_preload_list
 from app.logging_config import get_logger
 
 logger = get_logger('tts')
@@ -33,51 +37,69 @@ def _ensure_pocket_tts():
 class TTSService:
     """
     Service class for Text-to-Speech operations.
-    Manages model loading, voice caching, and audio generation.
+    Manages model loading (one pocket-tts model per language by default), voice caching, and audio generation.
     """
 
     def __init__(self):
-        self.model = None
-        self.voice_cache: dict = {}
+        self.models: dict[str, object] = {}
+        self.voice_cache: dict[tuple[str, str], dict] = {}
         self.voices_dir: str | None = None
         self._model_loaded = False
+        self._single_model_mode = False
+        self._default_language = 'english'
+        self._load_lock = threading.Lock()
 
     @property
     def is_loaded(self) -> bool:
-        """Check if the model is loaded."""
-        return self._model_loaded and self.model is not None
+        """Check if at least one model is loaded."""
+        return self._model_loaded and bool(self.models)
+
+    @property
+    def default_language(self) -> str:
+        return self._default_language
+
+    @property
+    def loaded_languages(self) -> list[str]:
+        """Canonical language ids currently in memory (empty in single-config mode)."""
+        if self._single_model_mode:
+            return []
+        return sorted(self.models.keys())
 
     @property
     def sample_rate(self) -> int:
-        """Get the model's sample rate."""
-        if self.model:
-            return self.model.sample_rate
-        return 24000  # Default pocket-tts sample rate
+        """Sample rate from the primary model (default language or single config)."""
+        m = self._primary_model()
+        if m is not None:
+            return m.sample_rate
+        return 24000
 
     @property
     def device(self) -> str:
-        """Get the model's device."""
-        if self.model:
-            return str(self.model.device)
+        m = self._primary_model()
+        if m is not None:
+            return str(m.device)
         return 'unknown'
+
+    def _primary_model(self):
+        if self._single_model_mode:
+            return self.models.get('__single__')
+        return self.models.get(self._default_language)
 
     def load_model(self, model_path: str | None = None) -> None:
         """
-        Load the TTS model.
+        Load TTS model(s).
 
-        Args:
-            model_path: Optional path to model file or variant name
+        If `model_path` points to a YAML config, loads that single model (language parameter ignored).
+        Otherwise loads pocket-tts per-language checkpoints; see `POCKET_TTS_DEFAULT_LANGUAGE`
+        and `POCKET_TTS_PRELOAD_LANGUAGES`.
         """
         _ensure_pocket_tts()
 
-        logger.info('Loading Pocket TTS model...')
+        logger.info('Loading Pocket TTS...')
         t0 = time.time()
 
-        # Determine model path
         effective_path = model_path
-
         if not effective_path:
-            # Check for bundled model in frozen executable
             _, bundle_model = Config.get_bundle_paths()
             if bundle_model and os.path.isfile(bundle_model):
                 effective_path = bundle_model
@@ -85,22 +107,58 @@ class TTSService:
 
         try:
             if effective_path:
-                logger.info(f'Loading model from: {effective_path}')
-                self.model = TTSModel.load_model(config=effective_path)
-            else:
-                logger.info('Loading default model from HuggingFace...')
-                self.model = TTSModel.load_model()
+                logger.info(f'Single-model mode (config file): {effective_path}')
+                self._single_model_mode = True
+                self.models['__single__'] = TTSModel.load_model(config=effective_path)
+                self._model_loaded = True
+                load_time = time.time() - t0
+                logger.info(
+                    f'Model loaded in {load_time:.2f}s. Device: {self.device}, '
+                    f'Sample rate: {self.sample_rate}'
+                )
+                return
+
+            self._single_model_mode = False
+            self._default_language = normalize_language(Config.DEFAULT_LANGUAGE, 'english')
+
+            preload: set[str] = {self._default_language}
+            preload.update(parse_preload_list(Config.PRELOAD_LANGUAGES))
+
+            for lang in sorted(preload):
+                self._ensure_model_loaded(lang)
 
             self._model_loaded = True
             load_time = time.time() - t0
             logger.info(
-                f'Model loaded in {load_time:.2f}s. '
-                f'Device: {self.device}, Sample Rate: {self.sample_rate}'
+                f'Multi-language mode: loaded {sorted(self.models.keys())} in {load_time:.2f}s. '
+                f'Device: {self.device}, Sample rate: {self.sample_rate}'
             )
 
         except Exception as e:
             logger.error(f'Failed to load model: {e}')
             raise
+
+    def _ensure_model_loaded(self, canonical_lang: str):
+        with self._load_lock:
+            if canonical_lang in self.models:
+                return self.models[canonical_lang]
+
+            logger.info(f'Loading Pocket TTS weights for language={canonical_lang!r}...')
+            t0 = time.time()
+            model = TTSModel.load_model(language=canonical_lang)
+            self.models[canonical_lang] = model
+            load_time = time.time() - t0
+            logger.info(
+                f'Language {canonical_lang} ready in {load_time:.2f}s '
+                f'(device={model.device}, sample_rate={model.sample_rate})'
+            )
+            return model
+
+    def model_for_language_key(self, language_key: str):
+        """Return the torch model for a canonical language id (or single-config model)."""
+        if self._single_model_mode:
+            return self.models['__single__']
+        return self.models[language_key]
 
     def set_voices_dir(self, voices_dir: str | None) -> None:
         """
@@ -118,40 +176,36 @@ class TTSService:
         else:
             self.voices_dir = None
 
-    def get_voice_state(self, voice_id_or_path: str) -> dict:
+    def get_voice_state(self, voice_id_or_path: str, language: str | None = None) -> tuple[str, dict]:
         """
         Resolve voice ID to a model state with caching.
 
-        Args:
-            voice_id_or_path: Voice identifier (name, file path, or URL)
-
         Returns:
-            Model state dictionary for the voice
-
-        Raises:
-            ValueError: If voice cannot be loaded
+            (canonical_language_key, voice_state) — use the same language key for generation.
         """
-        if not self.is_loaded:
-            raise RuntimeError('Model not loaded. Call load_model() first.')
+        if self._single_model_mode:
+            lang_key = '__single__'
+            model = self.models['__single__']
+        else:
+            lang_key = normalize_language(language, self._default_language)
+            model = self._ensure_model_loaded(lang_key)
 
-        # Resolve the voice path
         resolved_key = self._resolve_voice_path(voice_id_or_path)
+        cache_key = (lang_key, resolved_key)
 
-        # Check cache
-        if resolved_key in self.voice_cache:
-            logger.debug(f'Using cached voice state for: {resolved_key}')
-            return self.voice_cache[resolved_key]
+        if cache_key in self.voice_cache:
+            logger.debug(f'Using cached voice state for: {cache_key}')
+            return lang_key, self.voice_cache[cache_key]
 
-        # Load voice
-        logger.info(f'Loading voice: {resolved_key}')
+        logger.info(f'Loading voice: {resolved_key} (language={lang_key})')
         t0 = time.time()
 
         try:
-            state = self.model.get_state_for_audio_prompt(resolved_key)
-            self.voice_cache[resolved_key] = state
+            state = model.get_state_for_audio_prompt(resolved_key)
+            self.voice_cache[cache_key] = state
             load_time = time.time() - t0
             logger.info(f'Voice loaded in {load_time:.2f}s: {resolved_key}')
-            return state
+            return lang_key, state
 
         except Exception as e:
             logger.error(f"Failed to load voice '{voice_id_or_path}': {e}")
@@ -242,43 +296,43 @@ class TTSService:
 
         return False, f'Voice not found: {voice_id_or_path}'
 
-    def generate_audio(self, voice_state: dict, text: str) -> torch.Tensor:
+    def generate_audio(self, voice_state: dict, text: str, language_key: str) -> torch.Tensor:
         """
         Generate complete audio for given text.
 
         Args:
             voice_state: Model state from get_voice_state()
             text: Text to synthesize
-
-        Returns:
-            Audio tensor
+            language_key: Canonical language id from get_voice_state(), or '__single__'
         """
         if not self.is_loaded:
             raise RuntimeError('Model not loaded')
 
+        model = self.model_for_language_key(language_key)
         t0 = time.time()
-        audio = self.model.generate_audio(voice_state, text)
+        audio = model.generate_audio(voice_state, text)
         gen_time = time.time() - t0
 
         logger.info(f'Generated {len(text)} chars in {gen_time:.2f}s')
         return audio
 
-    def generate_audio_stream(self, voice_state: dict, text: str) -> Iterator[torch.Tensor]:
+    def generate_audio_stream(
+        self, voice_state: dict, text: str, language_key: str
+    ) -> Iterator[torch.Tensor]:
         """
         Generate audio in streaming chunks.
 
         Args:
             voice_state: Model state from get_voice_state()
             text: Text to synthesize
-
-        Yields:
-            Audio tensor chunks
+            language_key: Canonical language id from get_voice_state(), or '__single__'
         """
         if not self.is_loaded:
             raise RuntimeError('Model not loaded')
 
+        model = self.model_for_language_key(language_key)
         logger.info(f'Starting streaming generation for {len(text)} chars')
-        yield from self.model.generate_audio_stream(voice_state, text)
+        yield from model.generate_audio_stream(voice_state, text)
 
     def list_voices(self) -> list[dict]:
         """

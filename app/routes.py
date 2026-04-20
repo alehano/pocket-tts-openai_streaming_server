@@ -22,6 +22,7 @@ from app.services.audio import (
     validate_format,
     write_wav_header,
 )
+from app.language_normalize import CANONICAL_LANGUAGES
 from app.services.preprocess import TextPreprocessor
 from app.services.tts import get_tts_service
 
@@ -71,8 +72,23 @@ def health():
             'sample_rate': tts.sample_rate if tts.is_loaded else None,
             'voices_dir': tts.voices_dir,
             'voice_check': {'valid': voice_valid, 'message': voice_msg},
+            'default_language': tts.default_language,
+            'loaded_languages': tts.loaded_languages,
         }
     ), 200 if tts.is_loaded else 503
+
+
+@api.route('/v1/languages', methods=['GET'])
+def list_languages():
+    """Pocket-tts language ids accepted by POST /v1/audio/speech `language` field."""
+    return jsonify(
+        {
+            'object': 'list',
+            'data': [
+                {'id': lid, 'object': 'tts_language'} for lid in sorted(CANONICAL_LANGUAGES)
+            ],
+        }
+    )
 
 
 @api.route('/v1/voices', methods=['GET'])
@@ -110,6 +126,7 @@ def generate_speech():
         model: string (ignored, for compatibility)
         input: string (required) - Text to synthesize
         voice: string (optional) - Voice ID or path
+        language: string (optional) - Pocket-tts language id or BCP-47 (e.g. fr-FR); default from server config
         response_format: string (optional) - Audio format
         stream: boolean (optional) - Enable streaming
 
@@ -128,6 +145,7 @@ def generate_speech():
         return jsonify({'error': "Missing 'input' text"}), 400
 
     voice = data.get('voice', 'alba')
+    language = data.get('language')
     stream_request = data.get('stream', False)
 
     response_format = data.get('response_format', 'mp3')
@@ -148,7 +166,7 @@ def generate_speech():
         ), 400
 
     try:
-        voice_state = tts.get_voice_state(voice)
+        lang_key, voice_state = tts.get_voice_state(voice, language)
 
         # Check if streaming should be used
         use_streaming = stream_request or current_app.config.get('STREAM_DEFAULT', False)
@@ -168,26 +186,27 @@ def generate_speech():
             text = text_preprocessor.process(text)
             # logger.info(f'Preprocessed text: {text}')
         if use_streaming:
-            return _stream_audio(tts, voice_state, text, target_format)
-        return _generate_file(tts, voice_state, text, target_format)
+            return _stream_audio(tts, voice_state, text, target_format, lang_key)
+        return _generate_file(tts, voice_state, text, target_format, lang_key)
 
     except ValueError as e:
-        logger.warning(f'Voice loading failed: {e}')
+        logger.warning(f'Voice or language failed: {e}')
         return jsonify({'error': str(e)}), 400
     except Exception as e:
         logger.exception('Generation failed')
         return jsonify({'error': str(e)}), 500
 
 
-def _generate_file(tts, voice_state, text: str, fmt: str):
+def _generate_file(tts, voice_state, text: str, fmt: str, language_key: str):
     """Generate complete audio and return as file."""
     t0 = time.time()
-    audio_tensor = tts.generate_audio(voice_state, text)
+    audio_tensor = tts.generate_audio(voice_state, text, language_key)
     generation_time = time.time() - t0
 
     logger.info(f'Generated {len(text)} chars in {generation_time:.2f}s')
 
-    audio_buffer = convert_audio(audio_tensor, tts.sample_rate, fmt)
+    model = tts.model_for_language_key(language_key)
+    audio_buffer = convert_audio(audio_tensor, model.sample_rate, fmt)
     mimetype = get_mime_type(fmt)
 
     return send_file(
@@ -195,7 +214,7 @@ def _generate_file(tts, voice_state, text: str, fmt: str):
     )
 
 
-def _stream_audio(tts, voice_state, text: str, fmt: str):
+def _stream_audio(tts, voice_state, text: str, fmt: str, language_key: str):
     """Stream audio chunks."""
     # Normalize streaming format: we always emit PCM bytes, optionally wrapped
     # in a WAV container. For non-PCM/WAV formats (e.g. mp3, opus), coerce to
@@ -209,15 +228,18 @@ def _stream_audio(tts, voice_state, text: str, fmt: str):
         )
         stream_fmt = 'pcm'
 
+    model = tts.model_for_language_key(language_key)
+    sample_rate = model.sample_rate
+
     def generate():
-        stream = tts.generate_audio_stream(voice_state, text)
+        stream = tts.generate_audio_stream(voice_state, text, language_key)
         for chunk_tensor in stream:
             yield tensor_to_pcm_bytes(chunk_tensor)
 
     def stream_with_header():
         # Yield WAV header first if streaming as WAV
         if stream_fmt == 'wav':
-            yield write_wav_header(tts.sample_rate, num_channels=1, bits_per_sample=16)
+            yield write_wav_header(sample_rate, num_channels=1, bits_per_sample=16)
         yield from generate()
 
     mimetype = get_mime_type(stream_fmt)

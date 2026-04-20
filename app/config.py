@@ -33,6 +33,10 @@ class Config:
 
     # Model settings
     MODEL_PATH = os.environ.get('POCKET_TTS_MODEL_PATH', None)
+    # When MODEL_PATH is unset: load pocket-tts by language (see app/language_normalize.py).
+    DEFAULT_LANGUAGE = os.environ.get('POCKET_TTS_DEFAULT_LANGUAGE', 'english')
+    # Comma-separated canonical language ids to load at startup (in addition to default).
+    PRELOAD_LANGUAGES = os.environ.get('POCKET_TTS_PRELOAD_LANGUAGES', '')
     DEFAULT_VOICE = os.environ.get(
         'POCKET_TTS_DEFAULT_VOICE', 'hf://kyutai/tts-voices/alba-mackenna/casual.wav'
     )
