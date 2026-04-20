@@ -16,6 +16,40 @@ Tested and working fully with [WingmanAI by Shipbit](https://www.wingman-ai.com/
 - 🎤 **Text pre-processing** - Clean text for words and symbols TTS usually has difficulty with, automatically
 - 🌍 **Multi-language** - Per-request `language` (Pocket-TTS locales: English, French, German, Portuguese, Italian, Spanish); each locale loads its own model and stays in memory while running
 
+## Installing Pocket-TTS with all languages
+
+If you see an error about only `b6369a24.yaml` (English), your environment has an **old or minimal** `pocket-tts` wheel that does not ship the per-locale YAML files under `pocket_tts/config/`. Install a **current** release so those files exist (then this server can load `french_24l`, `german_24l`, etc.).
+
+**1. Upgrade from PyPI (simplest)** — in the same venv you use for the streaming server:
+
+```bash
+source .venv/bin/activate   # or your venv
+pip install -U "pocket-tts>=2.0.0"
+# pocket-tts 2.x expects torch>=2.5; if pip errors, upgrade torch first:
+pip install -U "torch>=2.5.0" "torchaudio>=2.5.0"
+pip install -U "pocket-tts>=2.0.0"
+```
+
+**2. Check that all configs are present:**
+
+```bash
+python -c "import pathlib, pocket_tts; d=pathlib.Path(pocket_tts.__path__[0])/'config'; print(*sorted(p.stem for p in d.glob('*.yaml')))"
+```
+
+You should see names like `english`, `french_24l`, `german_24l`, `italian`, `portuguese`, `spanish_24l` (exact set matches the upstream repo).
+
+**3. Install from a local clone** (same result as a full wheel, good for development):
+
+```bash
+git clone https://github.com/kyutai-labs/pocket-tts.git
+cd pocket-tts
+pip install -e .
+```
+
+Use that venv when you run `python server.py` or `./start.sh`.
+
+First run for each language may still **download weights** from Hugging Face (~hundreds of MB per locale); ensure disk space and network access.
+
 ## Quick Start
 
 ### Option 1: Docker (Recommended)
