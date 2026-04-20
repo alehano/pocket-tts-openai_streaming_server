@@ -1,39 +1,33 @@
 [project]
-description = "OpenAI-compatible TTS API server powered by Pocket-TTS"
-license = {text = "MIT"}
-name = "pocket-tts-openai-server"
+name = "pocket-tts-openai-streaming-server"
+version = "0.1.0"
+description = "OpenAI-compatible TTS server for Pocket-TTS"
 readme = "README.md"
 requires-python = ">=3.10"
-version = "2.4.0"
-
 dependencies = [
-  "flask>=3.0.0",
-  "waitress>=3.0.0",
-  "pocket-tts>=1.1.1",
-  "torch>=2.0.0,<=2.8.0",
-  "torchaudio>=2.0.0,<=2.8.0",
-  "scipy>=1.10.0",
-  "numpy>=1.24.0",
-  "soundfile>=0.12.0",
+    "flask>=3.0.0",
+    "waitress>=3.0.0",
+    "pocket-tts>=2.0.0",
+    "torch>=2.5.0,<=2.8.0",
+    "torchaudio>=2.5.0,<=2.8.0",
+    "scipy>=1.10.0",
+    "numpy>=2.0.0",
+    "soundfile>=0.12.0",
 ]
 
-[project.optional-dependencies]
-build = ["pyinstaller"]
-dev = ["ruff", "pytest"]
+# Application script (no importable package layout); uv still resolves deps from [project].
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
-[project.scripts]
-pocket-tts-server = "server:main"
+[tool.hatch.build.targets.wheel]
+packages = []
 
-[tool.ruff]
-line-length = 100
-target-version = "py310"
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
-[tool.ruff.lint]
-ignore = ["E501", "B008", "B904"]
-select = ["E", "W", "F", "I", "B", "C4", "UP"]
-
-[tool.ruff.lint.isort]
-known-first-party = ["app"]
-
-[tool.ruff.format]
-quote-style = "single"
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+torchaudio = { index = "pytorch-cpu" }
